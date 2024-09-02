@@ -21,21 +21,23 @@ class BaseRepository(Generic[T, M]):
         self.model = model
 
     def create(self, entity: T) -> T:
+        # Convert Pydantic model to ORM model and save it
         db_entity = self.model(**entity.model_dump())
         self.db.add(db_entity)
         self.db.commit()
         self.db.refresh(db_entity)
-        return T.from_orm(db_entity)
+        # Manually construct the Pydantic model from the ORM object
+        return self._construct_pydantic_model(db_entity)
 
     def get_by_id(self, entity_id: int) -> Optional[T]:
         db_entity = self.db.query(self.model).filter(self.model.id == entity_id).first()
         if db_entity:
-            return T.from_orm(db_entity)
+            return self._construct_pydantic_model(db_entity)
         return None
 
     def list_all(self) -> List[T]:
         entities = self.db.query(self.model).all()
-        return [T.from_orm(entity) for entity in entities]
+        return [self._construct_pydantic_model(entity) for entity in entities]
 
     def update(self, entity_id: int, entity: T) -> T:
         db_entity = self.db.query(self.model).filter(self.model.id == entity_id).first()
@@ -44,7 +46,7 @@ class BaseRepository(Generic[T, M]):
                 setattr(db_entity, key, value)
             self.db.commit()
             self.db.refresh(db_entity)
-            return T.from_orm(db_entity)
+            return self._construct_pydantic_model(db_entity)
         else:
             raise ValueError(f"{self.model.__name__} not found")
 
@@ -55,3 +57,7 @@ class BaseRepository(Generic[T, M]):
             self.db.commit()
         else:
             raise ValueError(f"{self.model.__name__} not found")
+
+    def _construct_pydantic_model(self, db_entity: M) -> T:
+        """Manually construct a Pydantic model from an ORM entity"""
+        return T.model_construct(**db_entity.__dict__)
